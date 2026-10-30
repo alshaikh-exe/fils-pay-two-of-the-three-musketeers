@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { canonicalJson } from "../payments/idempotency.js";
 
 /** Verifies the signature on an inbound acquirer callback. */
 
@@ -59,7 +60,12 @@ export function verifyAcquirerCallbackSignature(
   if (!parsed) return { valid: false, reason: "malformed_header" };
 
   const expected = createHmac("sha256", secret)
-    .update(`${parsed.timestamp}.${JSON.stringify(payload)}`)
+    // Fix: BUG-003 — Use canonicalJson instead of JSON.stringify so the
+    // signature is computed over key-sorted JSON, matching outbound signing
+    // in webhooks/sign.ts. JSON.stringify is insertion-order dependent and
+    // would cause valid callbacks to fail verification when the acquirer
+    // serializes keys in a different order.
+    .update(`${parsed.timestamp}.${canonicalJson(payload)}`)
     .digest("hex");
 
   if (!constantTimeEquals(expected, parsed.signature)) {

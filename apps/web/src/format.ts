@@ -30,10 +30,16 @@ export function dateTime(iso: string | null | undefined): string {
  * `occurred_at` directly, so pretending otherwise here would invent a
  * precision the endpoint doesn't have.
  */
-// YA: UTC day boundary, NOT Bahrain. filters are 3h off vs settlement days. known.
-// fixed, uses bahrain time now — am
+// Fix: BUG-004 — Return Asia/Bahrain midnight (UTC+3) as a UTC ISO instant,
+// not UTC midnight. The transaction filters compare occurred_at directly,
+// so a UTC day boundary is 3 hours off vs settlement days.
+// Bahrain has no DST, so the offset is a constant -3 hours.
 export function dayStartIso(dateValue: string): string | undefined {
-  return dateValue ? `${dateValue}T00:00:00.000Z` : undefined;
+  if (!dateValue) return undefined;
+  const [year, month, day] = dateValue.split("-").map(Number);
+  // Date.UTC normalizes negative hour values: Bahrain 00:00 = UTC previous day 21:00.
+  const ms = Date.UTC(year, month - 1, day, -3, 0, 0, 0);
+  return new Date(ms).toISOString();
 }
 
 /**

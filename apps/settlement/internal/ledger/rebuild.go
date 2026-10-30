@@ -86,13 +86,17 @@ func RebuildAllBalances(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]Re
 	}
 	rows.Close()
 
-	// TODO: lock merchant_balances rows first, a concurrent CloseBatch increment gets clobbered -- YA
+	// Fix: BUG-005 — Lock merchant_balances rows with FOR UPDATE so a
+	// concurrent CloseBatch increment cannot be clobbered by the rebuild.
+	// YA's TODO at this line acknowledged the race; the row lock serializes
+	// the rebuild against CloseBatch's incremental cache updates.
 	diffs := make(map[uuid.UUID]RebuildDiff, len(merchantIDs))
 
 	for _, merchantID := range merchantIDs {
 		var cachedBefore int64
 		err := tx.QueryRow(ctx, `
 			SELECT COALESCE(cached_payable_fils, 0) FROM merchant_balances WHERE merchant_id = $1
+			FOR UPDATE
 		`, merchantID).Scan(&cachedBefore)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("ledger: RebuildAllBalances: read cached balance for %s: %w", merchantID, err)

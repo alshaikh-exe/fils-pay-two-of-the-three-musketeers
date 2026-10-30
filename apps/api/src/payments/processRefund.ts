@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { ZERO_FILS, addFils, calculateRefundFee, compareFils, subtractFils, toFils, type Fils } from "@filspay/money";
-import { enqueueEvent } from "@filspay/events";
 import { withTransaction } from "../db/withTransaction.js";
 import type { AcquirerSimulator } from "../acquirer/types.js";
 import { claimIdempotencyKey, completeIdempotencyKey, failIdempotencyKey, hashRequest } from "./idempotency.js";
@@ -242,19 +241,15 @@ export async function processRefund(
       },
     });
 
-    await enqueueEvent(client, {
-      eventType: "refund.succeeded",
-      aggregateType: "transaction",
-      aggregateId: prepared.transactionId,
-      payload: {
-        merchantId: prepared.merchantId,
-        refundId: refund.id,
-        amountFils: prepared.requestedAmount,
-        feeReversedFils,
-        refundedTotalFils: newRefundedTotal,
-        newStatus,
-      },
-    });
+    // Fix: BUG-006 — Do not enqueue a refund.succeeded outbox event yet.
+    // refund.succeeded is not in WEBHOOK_ELIGIBLE_EVENT_TYPES (AGENTS.md:
+    // "Do not add it prematurely") and buildEnvelope throws on unknown types.
+    // Enqueuing it would create undeliverable rows and crash the dispatcher
+    // if someone adds the type to the eligible list without also updating
+    // buildEnvelope. Add the enqueueEvent call in v1.9 when refund webhooks
+    // ship, alongside the buildEnvelope case.
+    //
+    // (Removed enqueueEvent block for refund.succeeded.)
 
     const body = {
       id: refund.id,
